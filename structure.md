@@ -15,7 +15,7 @@ graph TD
             
             subgraph MemoryManager ["记忆管理逻辑 (Memory Management)"]
                 History["短期对话流 (近10轮上下文)"]
-                ContextExtractor["习惯提取 (更新最新主观状态)"]
+                ContextExtractor["习惯与语义提取 (Extractor Advisor)"]
                 TrendAnalyzer["趋势分析逻辑 (对比历史客观指标)"]
             end
 
@@ -36,7 +36,10 @@ graph TD
                 SubjectiveData["2.主观数据序列<br/> (1:N 随时间变化)"]
                 MedicalData["3.客观指标序列<br/> (1:N 历次体检数值)"]
             end
-            VectorDB[("语义知识库: <br/>1.功能医学专业库<br/>2.用户长时语义记忆")]
+            subgraph VectorDB ["语义知识库 (Vector Database)"]
+                MedLibrary["1.功能医学专业库"]
+                UserSemanticMem["2.用户长时语义记忆 (疑虑/偏好/陈述)"]
+            end
             FileStore[("原始文件: <br/>带时间戳的报告原图")]
         end
     end
@@ -54,7 +57,7 @@ graph TD
         Loop{"协商循环 (用户反馈)"}
     end
 
-    %% 逻辑流转
+    %% 逻辑流转 (补全所有连接线)
     UI --> Gate
     Cam --> OCR_Tool
     OCR_Tool -- "识别日期与数值" --> LocalModel
@@ -64,8 +67,14 @@ graph TD
     %% 档案检索逻辑 (带有时间维度)
     ChatClient --> History
     ChatClient --> TrendAnalyzer
-    TrendAnalyzer -. "查询历史趋势" .-> MedicalData
-    TrendAnalyzer -. "对比生活习惯变化" .-> SubjectiveData
+    TrendAnalyzer -. "查询历史指标趋势" .-> MedicalData
+    TrendAnalyzer -. "查询生活习惯变迁" .-> SubjectiveData
+    ChatClient -. "检索历史语义(如3个月前)" .-> UserSemanticMem
+
+    %% 记忆提取逻辑 (关键闭环：对话产生的反馈存入存储)
+    ChatClient --> ContextExtractor
+    ContextExtractor -- "更新习惯表" --> SubjectiveData
+    ContextExtractor -- "存储语义记忆" --> UserSemanticMem
 
     %% 信息检查环节
     ChatClient --> InfoCheck
@@ -76,9 +85,17 @@ graph TD
     CheckLogic -- "缺失" --> AwaitingInput --> Strategy
     CheckLogic -- "完整" --> InformationComplete --> Strategy
     
-    %% 最终生成 (Prompt 会包含: '由于您近三个月血糖持续下降...')
-    Strategy --> RAG --> CloudModel
+    %% 最终生成逻辑 (RAG 融合多方数据)
+    Strategy --> RAG
+    RAG -. "抓取指标趋势" .-> MedicalData
+    RAG -. "抓取专业知识" .-> MedLibrary
+    RAG -. "抓取历史记忆" .-> UserSemanticMem
+    
+    RAG --> CloudModel
     Strategy --> LocalModel --> CloudModel
+    
+    %% 落地与反馈循环
     CloudModel --> DraftPlan --> Loop
-    Loop -- "用户反馈" --> UI
+    Loop -- "用户点击: 做不到/想调整" --> ChatClient
+    Loop -- "确认方案" --> UI
 ```
